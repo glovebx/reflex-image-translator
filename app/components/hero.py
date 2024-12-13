@@ -67,7 +67,7 @@ def hero_section(viewport_width=0):
                             class_name="w-full mx-auto p-4",
                         ),
                         rx.cond(
-                            State.uploading,
+                            State.uploading | State.processing,
                             rx.vstack(
                                 rx.progress(value=State.progress),
                                 rx.text(f"{State.progress}%"),
