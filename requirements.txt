@@ -1,3 +1,4 @@
-reflex==0.6.6
+reflex==0.6.7
 paddlepaddle
 paddleocr
+beautifulsoup4

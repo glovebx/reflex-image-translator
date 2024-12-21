@@ -32,14 +32,44 @@ def hero_section(viewport_width=0):
                     "OCR solutions powered by PaddleOCR",
                     class_name="text-4xl font-regular drop-shadow-sm text-center mb-2",
                 ),
-                rx.box(
+                rx.hstack(
+                    rx.hstack(
+                        rx.text("From:", class_name="text-xl"),
+                        rx.select(
+                            State.google_translator_languages,
+                            placeholder="From Language",
+                            value=State.source_language,
+                            on_change=State.set_source_language,
+                            class_name="text-lg",
+                        ),
+                        justify="center",
+                        align="center",
+                    ),
+                    # Model selection dropdown
+                    rx.hstack(
+                        rx.text("To:", class_name="text-xl"),
+                        rx.select(
+                            State.google_translator_languages,
+                            placeholder="To Language",
+                            value=State.target_language,
+                            on_change=State.set_target_language,
+                            class_name="text-lg",
+                        ),
+                        justify="center",
+                        align="center",
+                    ),
+                    justify="center",
+                    align="center",
+                    spacing="6",
+                ),
+                rx.box(                    
                     rx.vstack(
                         rx.upload(
                             rx.vstack(
                                 rx.button(
                                     "Click here to add file (up to 1)",
-                                    color="rgb(107,99,246)",
-                                    bg="white",
+                                    # color="rgb(107,99,246)",
+                                    color_scheme="green",
                                     border="1px solid rgb(107,99,246)",
                                 ),
                                 rx.text(
