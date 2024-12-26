@@ -96,6 +96,21 @@ def add_auth_button() -> rx.Component:
                 direction="column",
                 spacing="4",
             ),
+            rx.center(
+                rx.vstack(
+                    rx.image(
+                        src="/wechat.jpeg",  # 替换成你的图片路径
+                        width="128px", # 限制宽度
+                        height="auto", # 高度自动，保持比例
+                        alt="scan to get login info", # 添加alt文本，增强可访问性
+                        style={ "display": "block"} # 解决图片下方可能出现的空白间隙
+                    ),
+                    rx.text("微信扫码添加客服，获取登录信息"), # 添加文字，并设置上边距
+                    spacing="1", # vstack内部元素间距
+                    align="center",
+                    class_name="py-4"                    
+                ),
+            ),
             max_width="450px",
             padding="1.5em",
             border=f"2px solid {rx.color('accent', 7)}",

@@ -15,6 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import re
 import reflex as rx
+import json_repair
 import requests
 import tempfile
 from typing import List, Dict, Tuple, Optional
@@ -26,35 +27,52 @@ import uuid
 # loaded_ocr_models = {'en': en_ocr}
 loaded_ocr_models = {}
 
-# gemini_url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent"
-translate_url = os.getenv('TRANSLATOR_URL')
+gemini_url = os.getenv('GEMINI_URL')
+gpt_url = os.getenv('OPENAI_URL')
+google_url = os.getenv('GOOGLE_URL')
+azure_url = os.getenv('AZURE_URL')
+azure_key = os.getenv('AZURE_KEY')
 
 _google_translator_languages = {
-  "中文": "zh-CN",
-  "繁体中文": "zh-TW",
-  "英语": "en",
-  "法语": "fr",
-  "德语": "de",
-  "日语": "ja",
-  "韩语": "ko",
-  "意大利语": "it",
-  "西班牙语": "es",
-  "俄语": "ru",
-  "阿拉伯语": "ar",
+  "🇨🇳Chinese": "zh-CN",
+  "🇨🇳Traditional Chinese": "zh-TW",
+  "🇺🇸English": "en",
+  "🇫🇷French": "fr",
+  "🇩🇪German": "de",
+  "🇯🇵Japanese": "ja",
+  "🇰🇷Korean": "ko",
+  "🇮🇹Italian": "it",
+  "🇪🇸Spanish": "es",
+  "🇷🇺Russian": "ru",
+  "🇦🇪Arabic": "ar",
+}
+
+_azure_translator_languages = {
+  "🇨🇳Chinese": "zh-Hans",
+  "🇨🇳Traditional Chinese": "zh-Hant",
+  "🇺🇸English": "en",
+  "🇫🇷French": "fr",
+  "🇩🇪German": "de",
+  "🇯🇵Japanese": "ja",
+  "🇰🇷Korean": "ko",
+  "🇮🇹Italian": "it",
+  "🇪🇸Spanish": "es",
+  "🇷🇺Russian": "ru",
+  "🇦🇪Arabic": "ar",
 }
 
 _paddle_ocr_languages = {
-  "中文": "ch",
-  "繁体中文": "chinese_cht",  
-  "英语": "en",
-  "法语": "fr",
-  "德语": "german",
-  "日语": "japan",
-  "韩语": "korean",
-  "意大利语": "it",
-  "西班牙语": "es",
-  "俄语": "ru",
-  "阿拉伯语": "ar",
+  "🇨🇳Chinese": "ch",
+  "🇨🇳Traditional Chinese": "chinese_cht",  
+  "🇺🇸English": "en",
+  "🇫🇷French": "fr",
+  "🇩🇪German": "german",
+  "🇯🇵Japanese": "japan",
+  "🇰🇷Korean": "korean",
+  "🇮🇹Italian": "it",
+  "🇪🇸Spanish": "es",
+  "🇷🇺Russian": "ru",
+  "🇦🇪Arabic": "ar",
 }
 
 def load_paddle_ocr(lang):
@@ -258,12 +276,16 @@ def replace_text_with_translation(image_path, ocr_results):
         font, x, y = get_font(image, translated, x_max - x_min, y_max - y_min)
 
         # Draw the translated text within the box
-        draw.text(
-            (x_min + x, y_min + y),
-            translated,
-            fill=get_text_fill_color(background_color),
-            font=font,
-        )
+        try:
+            draw.text(
+                (x_min + x, y_min + y),
+                translated,
+                fill=get_text_fill_color(background_color),
+                font=font,
+            )
+        except UnicodeEncodeError as e:
+            print('translated draw error==>', translated, '<==')
+            print(e, translated)
 
     return image
     
@@ -316,6 +338,8 @@ def compress_image_to_size(image_path, target_size_kb=500):
 
 class State(rx.State):
 
+    client_ip: str = None
+    client_free_request_limits: Dict[str, Tuple[str, str]] = {}
     viewport_width: int = 0
     viewport_height: int = 0    
 
@@ -331,12 +355,11 @@ class State(rx.State):
     login_message = ""
     login_processing: bool = False
 
-    
     google_translator_languages: List[str] = [key for key, _ in _google_translator_languages.items()]
     # print(google_translator_languages)
 
-    source_language: str = "英语"  # 默认源语言为英文
-    target_language: str = "中文"  # 默认目标语言为中文
+    source_language: str = "🇺🇸English"  # 默认源语言为英文
+    target_language: str = "🇨🇳Chinese"  # 默认目标语言为中文
 
     previewable_images: List[Tuple[str, str]] = []
     show_image_preview_modal: bool = False
@@ -363,51 +386,6 @@ class State(rx.State):
                 yield
             break
 
-            # print(item)
-
-            # file_extension = ".png"
-            # if item.startswith("data:image/"):
-            #     # 分割 data URI 字符串
-            #     header, b64_encoded = item.split(",", 1)
-
-            #     # 获取 mime 类型 (例如 image/png, image/jpeg)
-            #     mime_type = header.split(";")[0].split(":")[1]
-
-            #     #根据mime类型设置后缀名
-            #     if "png" in mime_type:
-            #         file_extension = ".png"
-            #     elif "jpeg" in mime_type or "jpg" in mime_type:
-            #         file_extension = ".jpg"
-            #     elif "gif" in mime_type:
-            #         file_extension = ".gif"
-            # else:
-            #     b64_encoded = item
-
-            # _, filename = tempfile.mkstemp()
-            # filename = os.path.basename(f"{filename}{file_extension}")
-
-            # # 尝试解码 base64 数据
-            # try:
-            #     # 尝试解码，处理可能的异常
-            #     image_data = base64.b64decode(b64_encoded)
-            # except (base64.binascii.Error, UnicodeDecodeError):
-            #     print("剪贴板内容不是有效的 base64 编码的图像数据。")
-            #     return
-            
-            # upload_dir = "uploaded_files"
-            # os.makedirs(upload_dir, exist_ok=True)
-            # file_path = os.path.join(upload_dir, filename)
-
-            # # 使用io.BytesIO处理内存中的图像数据
-            # try:
-            #     image = Image.open(io.BytesIO(image_data))
-
-            #     # 自动判断文件类型并保存
-            #     image.save(file_path)
-            #     print(f"图像已保存到 {file_path}")
-            # except Exception as e:
-            #     print(f"保存图像时发生错误: {e}")
-            #     return
         
     @rx.event
     async def handle_upload(self, files: list[rx.UploadFile]):
@@ -415,66 +393,6 @@ class State(rx.State):
         async for value in self.handle_submit_files(files=files):
             print('正在处理上传的图片...')
             yield
-        # self.error = ''
-
-        # if not files:
-        #     return
-
-        # if not self.current_user['session_id']:
-        #     # 需要登录
-        #     self.error = "请先登录"
-        #     return
-
-        # if files:
-        # # try:
-        #     file = files[0]
-        #     upload_dir = "uploaded_files"
-        #     os.makedirs(upload_dir, exist_ok=True)
-            
-        #     filename = file.filename
-        #     file_path = os.path.join(upload_dir, filename)
-        #     upload_data = await file.read()
-            
-        #     with open(file_path, "wb") as f:
-        #         f.write(upload_data)
-
-        #     compress_image_to_size(file_path)    
-
-        #     self.start_time_sec = datetime.now().timestamp()
-
-        #     ocr_results = None
-        #     step = 1
-        #     async for value in self.process_file(file_path, filename):
-        #         print('processing....', f"第{step}步")
-        #         step += 1
-        #         if value:
-        #             # 返回了text_blocks
-        #             ocr_results = value
-        #         yield    
-
-        #     if not ocr_results:
-        #         seconds = round((datetime.now().timestamp() - self.start_time_sec), 2)
-        #         self.progress_history.append(("处理结束", f"{seconds}秒"))
-        #         yield
-        #     else:
-        #         # Replace text with translated text
-        #         image = replace_text_with_translation(file_path, ocr_results)
-        #         # out_file_path = f"{file_path}.png"
-        #         # image.save(out_file_path)
-
-        #         buffered = io.BytesIO()
-        #         image.save(buffered, format="PNG")
-        #         b64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")  
-
-        #         self.previewable_images.append((f"data:image/png;base64,{b64_image}", f"{filename}.png"))
-
-        #         seconds = round((datetime.now().timestamp() - self.start_time_sec), 2)                
-        #         self.progress_history.append(("翻译完成", f"{seconds}秒"))
-        #         yield
-            
-        # # except Exception as e:
-        # #     print(e)
-        # #     self.error = f"翻译失败: {str(e)}"
     
     def handle_upload_progress(self, progress: dict):
         self.uploading = True
@@ -489,12 +407,25 @@ class State(rx.State):
         if not files and not base64_image:
             return
 
-        if not self.current_user.get('session_id'):
-            # 需要登录
-            self.error = "请先登录"
-            return
-        
         self.start_time_sec = datetime.now().timestamp()
+
+        if not self.current_user.get('session_id'):
+            # 免费用户
+            request_time_sec, count = self.client_free_request_limits.setdefault(self.client_ip, (self.start_time_sec, 0))
+            time_eclipsed = self.start_time_sec - request_time_sec
+            if time_eclipsed < 24 * 60 * 60 and count > 5:
+                # 需要登录
+                self.error = "免费额度已用完，请登录继续使用"
+                return
+            else:
+                if time_eclipsed >= 24 * 60 * 60:
+                    # 重新开始
+                    self.client_free_request_limits[self.client_ip] = (self.start_time_sec, 0)
+                else:
+                    # 请求加一
+                    self.client_free_request_limits[self.client_ip] = (request_time_sec, count + 1)
+
+        print(self.client_free_request_limits)
 
         seconds = round((datetime.now().timestamp() - self.start_time_sec), 2)
         self.progress_history = [("有新图片", f"{seconds}秒")]
@@ -594,6 +525,203 @@ class State(rx.State):
         #     print(e)
         #     self.error = f"翻译失败: {str(e)}"
 
+    async def translate_by_google(self, client: httpx.AsyncClient, source_text: str) -> str:
+        src_language = _google_translator_languages.get(self.source_language) or 'en'
+        dst_language = _google_translator_languages.get(self.target_language) or 'zh-CN'
+
+        input_payload = {
+            'sl': src_language,
+            'tl': dst_language, 
+            'hl': dst_language, 
+            'q': source_text
+        }
+
+        response = await client.get(
+            google_url,
+            params=input_payload,
+            headers={
+                "User-Agent": "Mozilla/4.0 (compatible;MSIE 6.0;Windows NT 5.1;SV1;.NET CLR 1.1.4322;.NET CLR 2.0.50727;.NET CLR 3.0.04506.30)"  # noqa: E501
+                },
+            follow_redirects=True
+        )
+
+        response_text = response.text
+        re_result = re.findall(
+            r'(?s)class="(?:t0|result-container)">(.*?)<', response_text
+        )
+        if response.status_code == 400:
+            result = "IRREPARABLE TRANSLATION ERROR"
+        else:
+            result = html.unescape(re_result[0])
+
+        result = remove_control_characters(result)
+
+        return result
+    
+    async def translate_by_azure(self, client: httpx.AsyncClient, source_texts: List[str]) -> List[List[str]]:
+        src_language = _azure_translator_languages.get(self.source_language) or 'en'
+        dst_language = _azure_translator_languages.get(self.target_language) or 'zh-Hans'
+
+        headers = {
+            'Ocp-Apim-Subscription-Key': azure_key,
+            # location required if you're using a multi-service or regional (not global) resource.
+            'Ocp-Apim-Subscription-Region': 'eastus',
+            'Content-type': 'application/json',
+            'X-ClientTraceId': str(uuid.uuid4())
+        }
+
+        params = {
+            'api-version': '3.0',
+            'from': src_language,
+            'to': dst_language
+        }
+
+        # You can pass more than one object in body.
+        input_payload = [{
+            'text': text
+        } for text in source_texts]
+
+        print(input_payload)
+
+        response = await client.post(
+            azure_url,
+            params=params,
+            json=input_payload,
+            headers=headers
+        )
+
+        response_json = response.json()
+        print(response_json)
+
+        results = [x['translations'][0]['text'] for x in response_json]
+
+        return [list(item) for item in zip(source_texts, results)]
+
+    async def translate_by_gpt(self, client: httpx.AsyncClient, source_texts: List[str]) -> List[List[str]]:
+        src_language = _google_translator_languages.get(self.source_language) or 'en'
+        dst_language = _google_translator_languages.get(self.target_language) or 'zh-CN'
+
+        # headers = {
+        #     "Content-Type": "application/json",
+        #     "Token": "v1beta.20241220_200"
+        #     },
+        
+        input_payload = {
+            "params": {
+                    "conversation_history": [],
+                    "prompt": f""" 你是一名学识渊博的翻译家，精通将 {src_language} 语言的内容翻译成 {dst_language} 语言： Prpmpts
+我有一些通过OCR识别得到的文本块，由于扫描质量或排版原因，这些文本块可能不连续、不完整，甚至顺序混乱。请你尽可能理解所有文本块的内容，并将其逐个翻译成简体中文。
+
+在翻译过程中，请注意以下几点：
+
+*   **上下文理解：** 即使单个文本块看起来没有意义，也请尝试结合其他文本块推断其含义。
+*   **专业术语和名称：** 如果文本块中包含专业术语、人名、地名、机构名等，请尽可能查找并使用准确的翻译，而不是直译。可以使用网络搜索或其他资源辅助翻译。
+*   **格式保留：** 如果文本块中包含日期、数字、特殊符号等，请在翻译后尽可能保留其格式。
+*   **顺序保留：** 输出的文本块顺序和输入的保持完全一致。
+*   **清晰标注：** 请逐个对文本块进行翻译，并在每个翻译后将文本块和翻译结果组合成数组，最后组合成二维数组，例如：
+    [[文本块1原文, 文本块1翻译], [文本块2原文, 文本块2翻译], ...]
+*   **清晰标注：** 用json格式返回，不需要加任何其他说明
+
+以下是需要翻译的文本块数组：
+{source_texts}
+"""
+            }
+        }        
+
+        print(input_payload)
+
+        # BUG: 不能加headers，会返回400错误
+        response = await client.post(
+            gpt_url,
+            json=input_payload,
+        )
+        try:
+        # if input_payload:
+            response.raise_for_status()
+
+            result = response.json()
+
+            print(result)
+
+            text = result['result']['content'].strip('\n ')
+
+            pattern = r"```json\n(.*?)\n```"  # 正则表达式
+            json_blocks = re.findall(pattern, text, re.DOTALL) # re.DOTALL 使 . 匹配包括换行符在内的所有字符
+            
+            if json_blocks:
+                for i, block in enumerate(json_blocks):
+                    # print(f"找到的 JSON 块 {i+1}:\n{block}\n")
+                    text = block.strip('\n ')
+                    # 只找第一块
+                    break
+            else:
+                print("没有找到 JSON 块。")
+
+            print('=====>', text, '<=====')
+
+            # return result.get('text').strip('\n ') if 'text' in result else ''
+            return json.loads(text)
+        except Exception as e:
+            print(e)
+
+        return []    
+    
+    async def translate_by_gemini(self, client: httpx.AsyncClient, source_texts: List[str]) -> List[List[str]]:
+        src_language = _google_translator_languages.get(self.source_language) or 'en'
+        dst_language = _google_translator_languages.get(self.target_language) or 'zh-CN'
+
+        headers = {
+            "Content-Type": "application/json",
+            "Token": "v1beta.20241220_200"
+            },
+        input_payload = {
+            "contents": [{
+                "parts":[{"text": 
+                          f""" 你是一名学识渊博的翻译家，精通将 {src_language} 语言的内容翻译成 {dst_language} 语言。
+我有一些通过OCR识别得到的文本块，由于扫描质量或排版原因，这些文本块可能不连续、不完整，甚至顺序混乱。请你尽可能理解所有文本块的内容，并将其逐个翻译成简体中文。
+
+在翻译过程中，请注意以下几点：
+
+*   **上下文理解：** 即使单个文本块看起来没有意义，也请尝试结合其他文本块推断其含义。
+*   **专业术语和名称：** 如果文本块中包含专业术语、人名、地名、机构名等，请尽可能查找并使用准确的翻译，而不是直译。可以使用网络搜索或其他资源辅助翻译。
+*   **格式保留：** 如果文本块中包含日期、数字、特殊符号等，请在翻译后尽可能保留其格式。
+*   **顺序保留：** 输出的文本块顺序和输入的保持完全一致。
+*   **清晰标注：** 请逐个对文本块进行翻译，并在每个翻译后将文本块和翻译结果组合成数组，最后组合成二维数组，例如：
+    [[文本块1原文, 文本块1翻译], [文本块2原文, 文本块2翻译], ...]
+
+以下是需要翻译的文本块数组：
+{source_texts}
+"""}]
+                }]
+                }
+        response = await client.post(
+            gemini_url,
+            json=input_payload,
+            headers=headers,
+        )
+        try:
+            response.raise_for_status()
+
+            result = response.json()
+
+            # print(result)
+
+            text = result['candidates'][0]['content']['parts'][0]['text'].strip('```javascript\n ')
+            # 前面可能会有多余字符，要去掉
+            valid_start_index = text.index('[')
+            if valid_start_index > 0:
+                text = text[valid_start_index:]
+
+            print('=====>', text, '<=====')
+
+            # return result.get('text').strip('\n ') if 'text' in result else ''
+            return json_repair.repair_json(text, return_objects=True)
+            # return json.loads(text)
+        except Exception as e:
+            print(e)
+
+        return []    
+
     async def process_file(self, file_path, filename):
         self.processing = True
         yield
@@ -653,7 +781,7 @@ class State(rx.State):
 
                 ocr_lang = _paddle_ocr_languages.get(self.source_language)
 
-                print(ocr_lang)
+                # print(ocr_lang)
 
                 load_paddle_ocr(lang=ocr_lang)
                 yield
@@ -670,51 +798,40 @@ class State(rx.State):
 
                 translated_results = []
                 if ocr_results:
+                    all_texts = [x[1][0] for x in ocr_results]
+                    # print(all_texts)
+                    gemini_results = await self.translate_by_gemini(client, all_texts)
+                    if not gemini_results:
+                        gemini_results = await self.translate_by_azure(client, all_texts)
+                        if not gemini_results:
+                            gemini_results = await self.translate_by_gpt(client, all_texts)
+
                     for ocr_result in ocr_results:
-                        text_block = ocr_result[1] if len(ocr_result) > 1 else None
-                        source_text = text_block[0] if text_block else ''
-                        if not source_text:
-                            text_block = (source_text, '')
-                            translated_results.append([ocr_result[0], text_block])
-                            continue
+                        text_block = ocr_result[1]
+                        source_text = text_block[0]
+                        # text_block = ocr_result[1] if len(ocr_result) > 1 else None
+                        # source_text = text_block[0] if text_block else ''
+                        # if not source_text:
+                        #     text_block = (source_text, '')
+                        #     translated_results.append([ocr_result[0], text_block])
+                        #     continue
                         # get from cache
-                        cache_results = Database.get_instance().get_translated_text(source_text)
-                        if cache_results:
-                            result = cache_results[0][0]
-                        else:
-                            src_language = _google_translator_languages.get(self.source_language) or 'en'
-                            dst_language = _google_translator_languages.get(self.target_language) or 'zh-CN'
 
-                            input_payload = {
-                                'sl': src_language,
-                                'tl': dst_language, 
-                                'hl': dst_language, 
-                                'q': source_text
-                            }
-
-                            print(input_payload)
-
-                            response = await client.get(
-                                translate_url,
-                                params=input_payload,
-                                headers={
-                                    "User-Agent": "Mozilla/4.0 (compatible;MSIE 6.0;Windows NT 5.1;SV1;.NET CLR 1.1.4322;.NET CLR 2.0.50727;.NET CLR 3.0.04506.30)"  # noqa: E501
-                                    },
-                                follow_redirects=True
-                            )
-
-                            response_text = response.text
-                            re_result = re.findall(
-                                r'(?s)class="(?:t0|result-container)">(.*?)<', response_text
-                            )
-                            if response.status_code == 400:
-                                result = "IRREPARABLE TRANSLATION ERROR"
+                        gemini_result = gemini_results.pop(0) if gemini_results else None
+                        if gemini_result and gemini_result[0] == source_text:
+                            # print('大模型有数据！！！！！！！！！！！！=', source_text)
+                            result = gemini_result[1]
+                        else:    
+                            cache_results = Database.get_instance().get_translated_text(source_text)
+                            # 如果大模型有数据，则忽略缓存
+                            if cache_results:
+                                print('缓存获取=', source_text)
+                                result = cache_results[0][0]
                             else:
-                                result = html.unescape(re_result[0])
+                                print('google翻译获取=', source_text)
+                                result = await self.translate_by_google(client, source_text)
 
-                            result = remove_control_characters(result)
-
-                            Database.get_instance().add_translated_text(source_text, result)
+                        Database.get_instance().add_translated_text(source_text, result)
 
                         text_block = (source_text, result)
                         translated_results.append([ocr_result[0], text_block])
@@ -747,6 +864,9 @@ class State(rx.State):
 
     def on_mount(self):
         """Load informations when the app starts"""
+
+        # 每个ip免费翻译5张图片/天
+        self.client_ip = self.router.session.client_ip
 
         if self.ajs_visitor_id:
             user_info = Database.get_instance().get_odoo_user(self.ajs_visitor_id)
